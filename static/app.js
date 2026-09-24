@@ -32,6 +32,23 @@ function escapeAttr(s) {
   return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
+/* ---------------- 占用区行（仅首张纸） ---------------- */
+
+function addZoneRow(zone) {
+  const data = zone || { x: 10, y: 10, width: 60, height: 40 };
+  const row = document.createElement("div");
+  row.className = "zone-row";
+  row.innerHTML = `
+    <input type="number" class="z-x" value="${data.x}" step="0.5" min="0" title="左上角 x mm" placeholder="x" />
+    <input type="number" class="z-y" value="${data.y}" step="0.5" min="0" title="左上角 y mm" placeholder="y" />
+    <input type="number" class="z-w" value="${data.width}" step="0.5" min="0.1" title="宽 mm" placeholder="宽" />
+    <input type="number" class="z-h" value="${data.height}" step="0.5" min="0.1" title="高 mm" placeholder="高" />
+    <button type="button" class="del" title="删除">✕</button>
+  `;
+  row.querySelector(".del").addEventListener("click", () => row.remove());
+  $("zone-rows").appendChild(row);
+}
+
 /* ---------------- 参数收集 ---------------- */
 
 function num(id) {
@@ -46,6 +63,12 @@ function collectParams() {
     count: parseInt(row.querySelector(".l-c").value, 10),
     allow_rotate: row.querySelector(".l-r").checked,
   }));
+  const occupied_zones = [...document.querySelectorAll(".zone-row")].map((row) => ({
+    x: parseFloat(row.querySelector(".z-x").value),
+    y: parseFloat(row.querySelector(".z-y").value),
+    width: parseFloat(row.querySelector(".z-w").value),
+    height: parseFloat(row.querySelector(".z-h").value),
+  }));
   return {
     page_width: num("page-width"),
     page_height: num("page-height"),
@@ -55,15 +78,18 @@ function collectParams() {
     margin_left: num("margin-left"),
     gap_x: num("gap-x"),
     gap_y: num("gap-y"),
+    occupied_zones,
     labels,
   };
 }
 
-async function fetchSvg(page) {
+// showOccupied：预览为 true（灰色显示占用区）；下载 / 打印为 false（只含新标签）
+async function fetchSvg(page, showOccupied) {
   const body = {
     page,
     show_margins: $("show-margins").checked,
     show_annotations: $("show-annotations").checked,
+    show_occupied: showOccupied,
     params: lastParams,
   };
   const resp = await fetch("/api/svg", {
@@ -77,7 +103,7 @@ async function fetchSvg(page) {
 
 async function renderPage() {
   if (!lastPlan) return;
-  const svg = await fetchSvg(currentPage);
+  const svg = await fetchSvg(currentPage, true);
   $("svg-host").innerHTML = svg;
   $("page-info").textContent = `${currentPage} / ${lastPlan.pages.length}`;
   $("prev-page").disabled = currentPage <= 1;
@@ -127,6 +153,7 @@ function escapeHtml(s) {
 /* ---------------- 事件 ---------------- */
 
 $("add-label").addEventListener("click", () => addLabelRow());
+$("add-zone").addEventListener("click", () => addZoneRow());
 
 $("preset").addEventListener("change", (e) => {
   if (!e.target.value) return;
@@ -186,13 +213,13 @@ function downloadBlob(text, filename, type) {
 }
 
 $("download-svg").addEventListener("click", async () => {
-  const svg = await fetchSvg(currentPage);
+  const svg = await fetchSvg(currentPage, false);
   downloadBlob(svg, `labels-page-${currentPage}.svg`, "image/svg+xml");
 });
 
 $("download-all").addEventListener("click", async () => {
   for (let p = 1; p <= lastPlan.pages.length; p++) {
-    const svg = await fetchSvg(p);
+    const svg = await fetchSvg(p, false);
     downloadBlob(svg, `labels-page-${p}.svg`, "image/svg+xml");
     await new Promise((r) => setTimeout(r, 150)); // 避免浏览器拦截批量下载
   }
@@ -200,7 +227,7 @@ $("download-all").addEventListener("click", async () => {
 
 $("print-all").addEventListener("click", async () => {
   const svgs = [];
-  for (let p = 1; p <= lastPlan.pages.length; p++) svgs.push(await fetchSvg(p));
+  for (let p = 1; p <= lastPlan.pages.length; p++) svgs.push(await fetchSvg(p, false));
   const w = lastPlan.page_width, h = lastPlan.page_height;
   const win = window.open("", "_blank");
   if (!win) { alert("浏览器拦截了打印窗口，请允许弹窗后重试。"); return; }

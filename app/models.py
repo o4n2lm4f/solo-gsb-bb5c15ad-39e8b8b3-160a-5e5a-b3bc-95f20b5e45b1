@@ -15,6 +15,18 @@ class LabelSpec(BaseModel):
     allow_rotate: bool = Field(False, description="是否允许旋转 90 度排版")
 
 
+class OccupiedZone(BaseModel):
+    """首张纸上已被占用的矩形区域（毫米，原点为纸张左上角）。
+
+    用于复用已经贴过标签的纸张：该区域内不再排新标签。
+    """
+
+    x: float = Field(..., ge=0, description="左上角 x mm")
+    y: float = Field(..., ge=0, description="左上角 y mm")
+    width: float = Field(..., gt=0, description="宽度 mm")
+    height: float = Field(..., gt=0, description="高度 mm")
+
+
 class LayoutRequest(BaseModel):
     """拼版参数。"""
 
@@ -26,6 +38,10 @@ class LayoutRequest(BaseModel):
     margin_left: float = Field(0, ge=0)
     gap_x: float = Field(0, ge=0, description="水平裁切间距 mm")
     gap_y: float = Field(0, ge=0, description="垂直裁切间距 mm")
+    occupied_zones: list[OccupiedZone] = Field(
+        default_factory=list,
+        description="首张纸已占用区域；排版时视为障碍，仅第一页生效",
+    )
     labels: list[LabelSpec] = Field(..., min_length=1)
 
 
@@ -74,6 +90,8 @@ class LayoutResponse(BaseModel):
     margin_left: float
     gap_x: float
     gap_y: float
+    # 回显占用区，供预览画灰色障碍；导出时前端要求不画出它们
+    occupied_zones: list[OccupiedZone]
 
 
 class SvgRequest(BaseModel):
@@ -82,6 +100,8 @@ class SvgRequest(BaseModel):
     page: int = Field(1, ge=1)
     show_margins: bool = True
     show_annotations: bool = True
+    # 预览传 True（灰色显示占用区）；下载 / 打印传 False（SVG 只含新标签）
+    show_occupied: bool = True
     params: LayoutRequest
 
 

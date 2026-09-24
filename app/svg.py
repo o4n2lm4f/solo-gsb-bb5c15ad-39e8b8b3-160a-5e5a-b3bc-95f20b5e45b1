@@ -36,7 +36,8 @@ def _cut_marks(x: float, y: float, w: float, h: float) -> str:
 
 
 def build_svg(plan: LayoutResponse, page_no: int,
-              show_margins: bool = True, show_annotations: bool = True) -> str:
+              show_margins: bool = True, show_annotations: bool = True,
+              show_occupied: bool = True) -> str:
     page = next((p for p in plan.pages if p.page == page_no), None)
     if page is None:
         raise ValueError(f"页码超出范围：共 {len(plan.pages)} 页，请求第 {page_no} 页。")
@@ -55,6 +56,8 @@ def build_svg(plan: LayoutResponse, page_no: int,
             ".annot{font-family:Arial,'Noto Sans CJK SC',sans-serif;"
             "font-size:2.2mm;fill:#9aa0a6;text-anchor:middle;}"
             ".marginguide{fill:none;stroke:#5b8def;stroke-width:0.1;stroke-dasharray:1 1;}"
+            ".occupied{fill:#6b7280;fill-opacity:0.3;stroke:#4b5563;"
+            "stroke-width:0.2;stroke-dasharray:1.5 1;}"
             ".pageno{font-family:Arial,sans-serif;font-size:2.5mm;fill:#9aa0a6;}</style>"
         ),
     ]
@@ -66,6 +69,15 @@ def build_svg(plan: LayoutResponse, page_no: int,
             f'<rect class="marginguide" x="{_fmt(mx0)}" y="{_fmt(my0)}" '
             f'width="{_fmt(mx1 - mx0)}" height="{_fmt(my1 - my0)}"/>'
         )
+
+    # 占用区只存在于首张纸：预览以灰色画出；下载 / 打印传
+    # show_occupied=False，导出的 SVG 只含新标签
+    if show_occupied and page.page == 1:
+        for z in plan.occupied_zones:
+            parts.append(
+                f'<rect class="occupied" x="{_fmt(z.x)}" y="{_fmt(z.y)}" '
+                f'width="{_fmt(z.width)}" height="{_fmt(z.height)}"/>'
+            )
 
     for lab in page.labels:
         parts.append(

@@ -7,6 +7,11 @@
 预留位置，同时把可排区域在右、下方向各扩展一个间距（仅用于装箱
 判断）。于是相邻标签之间恰好间隔 gap，而第一张/最后一张标签可以
 紧贴页边距，纸张边缘不会多出半个间距。
+
+占用区（复用已贴标签的纸张）：仅首张纸有效。每个占用区按
+(区域宽 + gap_x) × (区域高 + gap_y) 作为障碍盒预先抬入天际线，
+新标签因此与占用区保持与标签之间相同的裁切间距；首张放不下的
+份数继续排到后续空白页。
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from .models import (
     LayoutRequest,
     LayoutResponse,
     LabelSummary,
+    OccupiedZone,
     PageLayout,
     PlacedLabel,
 )
@@ -118,6 +124,18 @@ def compute_layout(req: LayoutRequest) -> LayoutResponse:
             "页边距过大：上下/左右边距之和不能达到或超过纸张尺寸，请减小页边距。"
         )
 
+    # 占用区必须完整落在纸张内（允许落在页边距里，那里本来就不排版）
+    for i, z in enumerate(req.occupied_zones):
+        if (
+            z.x + z.width > req.page_width + EPS
+            or z.y + z.height > req.page_height + EPS
+        ):
+            raise ValueError(
+                f"占用区 {i + 1} 超出纸张范围：左上角 ({_r(z.x)}, {_r(z.y)})，"
+                f"宽高 {_r(z.width)}×{_r(z.height)}mm，"
+                f"纸张尺寸 {_r(req.page_width)}×{_r(req.page_height)}mm。"
+            )
+
     # 装箱用区域（向右、向下各借用一个间距）
     sky_area_w = area_w + req.gap_x
     sky_area_h = area_h + req.gap_y
@@ -183,9 +201,26 @@ def compute_layout(req: LayoutRequest) -> LayoutResponse:
         if rotated:
             rotated_count[i] += 1
 
+    # 占用区障碍盒：区域向右、向下各扩展一个裁切间距，与标签之间的
+    # 间距语义一致（新标签四方向都与占用区保持 gap）。障碍盒裁剪到
+    # 装箱区域 [area, area+content+gap] 内，避免把天际线引出界外。
+    sky_limit_x = area_x + sky_area_w
+    sky_limit_y = area_y + sky_area_h
+
+    def add_occupied(sky: _Skyline) -> None:
+        """把首张纸的占用区作为障碍抬入天际线（仅第一页调用）。"""
+        for z in req.occupied_zones:
+            x0 = max(z.x, area_x)
+            y0 = max(z.y, area_y)
+            x1 = min(z.x + z.width + req.gap_x, sky_limit_x)
+            y1 = min(z.y + z.height + req.gap_y, sky_limit_y)
+            if x1 - x0 > EPS and y1 - y0 > EPS:
+                sky.add(x0, y0, x1 - x0, y1 - y0)
+
     # 多趟扫描：每趟按用户输入顺序放置；当前页放不下的标签留给新页，
     # 后续较小的标签仍可回填本页空隙。没有任何标签能放下时续页。
     sky = new_page()
+    add_occupied(sky)  # 占用区只存在于首张纸，后续页为空白纸
     while sum(remaining) > 0:
         progressed = False
         for i, rem in enumerate(remaining):
@@ -236,4 +271,8 @@ def compute_layout(req: LayoutRequest) -> LayoutResponse:
         margin_left=_r(req.margin_left),
         gap_x=_r(req.gap_x),
         gap_y=_r(req.gap_y),
+        occupied_zones=[
+            OccupiedZone(x=_r(z.x), y=_r(z.y), width=_r(z.width), height=_r(z.height))
+            for z in req.occupied_zones
+        ],
     )

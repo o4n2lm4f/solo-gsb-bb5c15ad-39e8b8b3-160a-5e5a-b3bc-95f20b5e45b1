@@ -56,6 +56,14 @@
         </fieldset>
 
         <fieldset>
+          <legend>首张纸占用区 (mm)</legend>
+          <p class="note">复用已贴过标签的纸张时，登记纸上已被占用的区域（左上角 x / y + 宽高）。
+            新标签会自动避开并保持裁切间距；仅第一张纸生效，可添加多个。</p>
+          <div id="zone-rows"></div>
+          <button type="button" id="add-zone" class="ghost">＋ 添加占用区</button>
+        </fieldset>
+
+        <fieldset>
           <legend>标签规格</legend>
           <div id="label-rows"></div>
           <button type="button" id="add-label" class="ghost">＋ 添加一种标签</button>
