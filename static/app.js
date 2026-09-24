@@ -6,7 +6,6 @@ const $ = (id) => document.getElementById(id);
 let lastPlan = null;     // 最近一次 /api/layout 返回的拼版结果
 let lastParams = null;   // 对应的请求参数
 let currentPage = 1;
-let rowSeq = 0;
 
 /* ---------------- 标签行 ---------------- */
 
@@ -32,6 +31,34 @@ function escapeAttr(s) {
   return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
+/* ---------------- 首张纸占用区行 ---------------- */
+
+function addZoneRow(zone) {
+  const data = zone || { x: 20, y: 20, width: 80, height: 40 };
+  const row = document.createElement("div");
+  row.className = "zone-row";
+  row.innerHTML = `
+    <span class="z-idx"></span>
+    <input type="number" class="z-x" value="${data.x}" step="0.5" title="左上角 X（距纸左）mm" />
+    <input type="number" class="z-y" value="${data.y}" step="0.5" title="左上角 Y（距纸顶）mm" />
+    <input type="number" class="z-w" value="${data.width}" step="0.5" min="0.1" title="占用区宽 mm" />
+    <input type="number" class="z-h" value="${data.height}" step="0.5" min="0.1" title="占用区高 mm" />
+    <button type="button" class="del" title="删除">✕</button>
+  `;
+  row.querySelector(".del").addEventListener("click", () => {
+    row.remove();
+    refreshZoneIndex();
+  });
+  $("zone-rows").appendChild(row);
+  refreshZoneIndex();
+}
+
+function refreshZoneIndex() {
+  document.querySelectorAll(".zone-row").forEach((row, i) => {
+    row.querySelector(".z-idx").textContent = `#${i + 1}`;
+  });
+}
+
 /* ---------------- 参数收集 ---------------- */
 
 function num(id) {
@@ -46,6 +73,12 @@ function collectParams() {
     count: parseInt(row.querySelector(".l-c").value, 10),
     allow_rotate: row.querySelector(".l-r").checked,
   }));
+  const occupied_zones = [...document.querySelectorAll(".zone-row")].map((row) => ({
+    x: parseFloat(row.querySelector(".z-x").value),
+    y: parseFloat(row.querySelector(".z-y").value),
+    width: parseFloat(row.querySelector(".z-w").value),
+    height: parseFloat(row.querySelector(".z-h").value),
+  }));
   return {
     page_width: num("page-width"),
     page_height: num("page-height"),
@@ -56,14 +89,36 @@ function collectParams() {
     gap_x: num("gap-x"),
     gap_y: num("gap-y"),
     labels,
+    occupied_zones,
   };
 }
 
-async function fetchSvg(page) {
+function validateParams(p) {
+  const bad = (msg) => { throw new Error(msg); };
+  for (const [name, v] of [
+    ["纸宽", p.page_width], ["纸高", p.page_height],
+  ]) if (!(v > 0)) bad(`${name}必须为正数。`);
+  for (const z of p.occupied_zones) {
+    if ([z.x, z.y, z.width, z.height].some((v) => !Number.isFinite(v))) {
+      bad("占用区的 X / Y / 宽 / 高必须全部填写为数字。");
+    }
+    if (z.x < 0 || z.y < 0) bad("占用区左上角 X / Y 不能为负数。");
+    if (z.width <= 0 || z.height <= 0) bad("占用区宽、高必须为正数。");
+    if (z.x + z.width > p.page_width + 1e-6) {
+      bad(`占用区越界：X + 宽 = ${+(z.x + z.width).toFixed(2)}mm，超过纸张宽度 ${p.page_width}mm。`);
+    }
+    if (z.y + z.height > p.page_height + 1e-6) {
+      bad(`占用区越界：Y + 高 = ${+(z.y + z.height).toFixed(2)}mm，超过纸张高度 ${p.page_height}mm。`);
+    }
+  }
+}
+
+async function fetchSvg(page, { showOccupied = false } = {}) {
   const body = {
     page,
     show_margins: $("show-margins").checked,
     show_annotations: $("show-annotations").checked,
+    show_occupied: showOccupied,
     params: lastParams,
   };
   const resp = await fetch("/api/svg", {
@@ -77,7 +132,8 @@ async function fetchSvg(page) {
 
 async function renderPage() {
   if (!lastPlan) return;
-  const svg = await fetchSvg(currentPage);
+  // 预览显示灰色占用区（仅第一页有），与下载/打印的 SVG 坐标完全一致
+  const svg = await fetchSvg(currentPage, { showOccupied: true });
   $("svg-host").innerHTML = svg;
   $("page-info").textContent = `${currentPage} / ${lastPlan.pages.length}`;
   $("prev-page").disabled = currentPage <= 1;
@@ -90,10 +146,13 @@ function renderSummary(plan) {
   const el = $("summary");
   el.classList.remove("empty");
   const allPlaced = plan.total_placed === plan.total_requested;
+  const zoneInfo = plan.occupied_zones.length
+    ? `，首张纸含 <strong>${plan.occupied_zones.length}</strong> 个占用区（灰色）`
+    : "";
   let html = `<div class="totals">
       共 <strong>${plan.total_requested}</strong> 个标签，
       排入 <strong class="ok">${plan.total_placed}</strong> 个，
-      使用 <strong>${plan.pages.length}</strong> 张纸
+      使用 <strong>${plan.pages.length}</strong> 张纸${zoneInfo}
       ${allPlaced ? "（全部排入 ✔）" : `，<strong style="color:var(--danger)">${plan.total_requested - plan.total_placed} 个未排入</strong>`}
     </div>
     <table>
@@ -127,6 +186,7 @@ function escapeHtml(s) {
 /* ---------------- 事件 ---------------- */
 
 $("add-label").addEventListener("click", () => addLabelRow());
+$("add-zone").addEventListener("click", () => addZoneRow());
 
 $("preset").addEventListener("change", (e) => {
   if (!e.target.value) return;
@@ -140,6 +200,7 @@ $("params-form").addEventListener("submit", async (e) => {
   lastParams = collectParams();
   currentPage = 1;
   try {
+    validateParams(lastParams);
     const resp = await fetch("/api/layout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

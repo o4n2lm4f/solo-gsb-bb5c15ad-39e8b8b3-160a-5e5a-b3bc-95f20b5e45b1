@@ -36,7 +36,8 @@ def _cut_marks(x: float, y: float, w: float, h: float) -> str:
 
 
 def build_svg(plan: LayoutResponse, page_no: int,
-              show_margins: bool = True, show_annotations: bool = True) -> str:
+              show_margins: bool = True, show_annotations: bool = True,
+              show_occupied: bool = False) -> str:
     page = next((p for p in plan.pages if p.page == page_no), None)
     if page is None:
         raise ValueError(f"页码超出范围：共 {len(plan.pages)} 页，请求第 {page_no} 页。")
@@ -58,6 +59,34 @@ def build_svg(plan: LayoutResponse, page_no: int,
             ".pageno{font-family:Arial,sans-serif;font-size:2.5mm;fill:#9aa0a6;}</style>"
         ),
     ]
+
+    # 占用区仅存在于第一张纸；仅在预览（show_occupied）时绘制，
+    # 下载 / 打印的 SVG 跳过本块（连同其专用样式），因此只含新标签。
+    if show_occupied and page_no == 1 and plan.occupied_zones:
+        parts.append(
+            '<defs><pattern id="occHatch" patternUnits="userSpaceOnUse" '
+            'width="3" height="3" patternTransform="rotate(45)">'
+            '<rect width="3" height="3" fill="#e8eaed"/>'
+            '<line x1="0" y1="0" x2="0" y2="3" stroke="#b9bdc4" stroke-width="0.5"/>'
+            "</pattern></defs>"
+        )
+        parts.append(
+            "<style>.occupied{fill:url(#occHatch);stroke:#9aa0a6;"
+            "stroke-width:0.15;stroke-dasharray:1.2 0.8;}"
+            ".occtext{font-family:Arial,'Noto Sans CJK SC',sans-serif;"
+            "font-size:2.5mm;fill:#7b808a;text-anchor:middle;}</style>"
+        )
+        for z in plan.occupied_zones:
+            parts.append(
+                f'<rect class="occupied" x="{_fmt(z.x)}" y="{_fmt(z.y)}" '
+                f'width="{_fmt(z.width)}" height="{_fmt(z.height)}"/>'
+            )
+            if min(z.width, z.height) >= 12:
+                cx, cy = z.x + z.width / 2, z.y + z.height / 2
+                parts.append(
+                    f'<text class="occtext" x="{_fmt(cx)}" y="{_fmt(cy + 0.9)}">'
+                    "已占用</text>"
+                )
 
     if show_margins:
         mx0, my0 = plan.margin_left, plan.margin_top

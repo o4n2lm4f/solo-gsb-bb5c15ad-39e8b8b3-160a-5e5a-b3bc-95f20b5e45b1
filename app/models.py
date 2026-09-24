@@ -15,6 +15,19 @@ class LabelSpec(BaseModel):
     allow_rotate: bool = Field(False, description="是否允许旋转 90 度排版")
 
 
+class OccupiedZone(BaseModel):
+    """首张纸上已被占用的区域（如已贴过的标签），单位毫米。
+
+    坐标原点为纸张左上角。排版时视为障碍，新标签与其保持裁切间距；
+    仅作用于第一页，放不下的份数续到后续空白页。
+    """
+
+    x: float = Field(..., description="左上角横坐标 mm")
+    y: float = Field(..., description="左上角纵坐标 mm")
+    width: float = Field(..., gt=0, description="占用区宽度 mm")
+    height: float = Field(..., gt=0, description="占用区高度 mm")
+
+
 class LayoutRequest(BaseModel):
     """拼版参数。"""
 
@@ -27,6 +40,9 @@ class LayoutRequest(BaseModel):
     gap_x: float = Field(0, ge=0, description="水平裁切间距 mm")
     gap_y: float = Field(0, ge=0, description="垂直裁切间距 mm")
     labels: list[LabelSpec] = Field(..., min_length=1)
+    occupied_zones: list[OccupiedZone] = Field(
+        default_factory=list, description="首张纸占用区（障碍），可多个"
+    )
 
 
 class PlacedLabel(BaseModel):
@@ -74,6 +90,9 @@ class LayoutResponse(BaseModel):
     margin_left: float
     gap_x: float
     gap_y: float
+    occupied_zones: list[OccupiedZone] = Field(
+        default_factory=list, description="回显首张纸占用区"
+    )
 
 
 class SvgRequest(BaseModel):
@@ -82,6 +101,10 @@ class SvgRequest(BaseModel):
     page: int = Field(1, ge=1)
     show_margins: bool = True
     show_annotations: bool = True
+    show_occupied: bool = Field(
+        False,
+        description="是否绘制首张纸占用区（预览用；下载/打印应为 false，只含新标签）",
+    )
     params: LayoutRequest
 
 

@@ -9,7 +9,7 @@
 <body>
   <header class="topbar">
     <h1>小批量标签拼版工具</h1>
-    <span class="subtitle">毫米坐标 · 自动排版 · 续页 · 可打印 SVG 导出</span>
+    <span class="subtitle">毫米坐标 · 自动排版 · 续页 · 首张纸占用区避让 · 可打印 SVG 导出</span>
   </header>
 
   <main class="layout">
@@ -53,6 +53,17 @@
             <label>水平间距<input type="number" id="gap-x" value="2" step="0.5" min="0" /></label>
             <label>垂直间距<input type="number" id="gap-y" value="2" step="0.5" min="0" /></label>
           </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>首张纸占用区（mm，可多个）</legend>
+          <p class="hint">复用已贴过标签的纸张：以纸张左上角为原点填写已占用矩形，
+            新标签会自动避让并保持裁切间距；放不下的份数续排到空白页。越界会报错。</p>
+          <div class="zone-head">
+            <span></span><span>左上角 X</span><span>左上角 Y</span><span>宽</span><span>高</span><span></span>
+          </div>
+          <div id="zone-rows"></div>
+          <button type="button" id="add-zone" class="ghost">＋ 添加占用区</button>
         </fieldset>
 
         <fieldset>

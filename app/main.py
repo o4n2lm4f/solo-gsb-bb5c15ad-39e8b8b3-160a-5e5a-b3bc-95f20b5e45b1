@@ -38,7 +38,9 @@ def api_layout(req: LayoutRequest) -> LayoutResponse:
 def api_svg(req: SvgRequest) -> Response:
     try:
         plan = compute_layout(req.params)
-        svg = build_svg(plan, req.page, req.show_margins, req.show_annotations)
+        svg = build_svg(
+            plan, req.page, req.show_margins, req.show_annotations, req.show_occupied
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     filename = f"labels-page-{req.page}.svg"
